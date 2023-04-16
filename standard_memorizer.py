@@ -1,6 +1,11 @@
+import re
+from pprint import pprint
 from typing import List
+import random
 
 from input import get_roots_help_message, verify_guess
+from user_experience import pause_then_clear_screen, clear_screen, temporarily_show_text
+import user_experience
 
 """
 terminology:
@@ -25,6 +30,69 @@ DECORATED_BAR_LINES = [":|", "||", "|1.", "|2.", "|A", "|B", "|C"]
 file = open("submission.chords", "r")
 
 
+def get_song_files():
+    from os import listdir
+    from os.path import isfile, join
+    mypath = "text_standards"
+    onlyfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
+    return onlyfiles
+
+
+def get_song_names():
+    return list(map(
+        lambda s: s.replace(".chords", "").replace("_", " ").lower(), get_song_files()
+    ))
+
+
+def get_song_name_to_file_name():
+    song_files = get_song_files()
+    song_name_to_file_name = {}
+    for song_file in song_files:
+        song_name = song_file.replace(".chords", "").replace("_", " ").lower()
+        song_name_to_file_name[song_name] = song_file
+
+    return song_name_to_file_name
+
+
+def get_start_to_first_ending_of_song(text_standard_filename):
+    music = open(text_standard_filename, "r")
+    music = "".join(music.readlines())
+    pattern = re.compile(r"(.*)\|1\.", re.S)
+    match = re.search(pattern, music)[0]
+    return match
+
+
+def get_first_ending(text_standard_filename):
+    music = open(text_standard_filename, "r")
+    music = "".join(music.readlines())
+    pattern = re.compile(r"\|1\..*")
+    match = re.search(pattern, music)
+
+
+def get_second_ending(text_standard_filename):
+    music = open(text_standard_filename, "r")
+    music = "".join(music.readlines())
+    pattern = re.compile(r"\|2\..*")
+    match = re.search(pattern, music)
+    return match.group()
+
+
+def get_anchor_interval_representation_of_second_repeat(text_standard_filename):
+    start_to_first_ending = get_start_to_first_ending_of_song(text_standard_filename)
+    anchor_intervals_from_start_to_first_ending = []
+    lines_from_start_to_first_ending = start_to_first_ending.split("\n")
+    for inner_music_line in lines_from_start_to_first_ending:
+        chords: List[List[int]] = get_chords_from_music_line(inner_music_line)
+        anchor_intervals_from_start_to_first_ending.append(chords)
+
+    second_ending = get_second_ending(text_standard_filename)
+    second_ending_chords = get_chords_from_music_line(second_ending)
+    second_ending_repeat = anchor_intervals_from_start_to_first_ending
+    second_ending_repeat[-1].extend(second_ending_chords)
+
+    return second_ending_repeat
+
+
 def get_anchor_interval_representation_of_song(text_standard_filename):
     """
     terminology:
@@ -40,8 +108,15 @@ def get_anchor_interval_representation_of_song(text_standard_filename):
 
     for music_line in music:
         if not music_line.isspace():
-            chords: List[List[int]] = get_chords_from_music_line(music_line)
-            anchor_interval_song.append(chords)
+            if "|2." in music_line.strip():
+                anchor_interval_song.extend(
+                    get_anchor_interval_representation_of_second_repeat(
+                        text_standard_filename
+                    )
+                )
+            else:
+                chords: List[List[int]] = get_chords_from_music_line(music_line)
+                anchor_interval_song.append(chords)
 
     return anchor_interval_song
 
@@ -61,19 +136,16 @@ def replace_decorated_bar_lines_with_regular_bar_lines(music_line: str) -> str:
 
 
 def get_chords_from_music_line(music_line: str) -> List[List[int]]:
-    """
-    """
-
     simplified_line = replace_decorated_bar_lines_with_regular_bar_lines(music_line)
 
     bar_line_content = list(map(lambda s: s.strip(), simplified_line.split("|")))
+    bar_line_content = list(map(lambda s: s.split("/")[0] if "/" in s else s, bar_line_content))  # remove slash chords
     bar_line_content = list(filter(lambda s: s != "", bar_line_content))
-    bar_line_content = list(map(lambda s: s.split("-") if "-" in s else s, bar_line_content))
+    bar_line_content = list(map(lambda s: s.split("-") if "-" in s else s, bar_line_content))  # handle multi chords
 
     chords: List[List[int]] = []  # rows where each bar can have multiple chords
 
     for bar in bar_line_content:
-
         def convert_single_bar_to_anchor_intervals(bar: str) -> List[int]:
             split_bar = bar.split()
             content_no_extensions = list(filter(lambda s: s.isdigit(), split_bar))
@@ -89,33 +161,59 @@ def get_chords_from_music_line(music_line: str) -> List[List[int]]:
             assert (type(bar) is str)
             chords.append(convert_single_bar_to_anchor_intervals(bar))
 
-
     return chords
+
+
+def select_song():
+    choice = input("Would you like to pick a song or let me choose a random one? (p)ick/(r)andom: ")
+    song_file = ""
+    if choice == "p":
+        requested_song = ""
+        song_name_input = input("Ok, go ahead and choose a song: ")
+        while requested_song == "":
+            for song_name in get_song_names():
+                if song_name_input in song_name:
+                    requested_song = song_name
+            if song_name_input == "":
+                song_name_input = input("Sorry we don't have that song, try again: ")
+
+        assert (requested_song != "" and requested_song in get_song_names())
+
+        temporarily_show_text(f"Ok, we'll load up {requested_song}")
+
+        song_file = get_song_name_to_file_name()[requested_song]
+
+    elif choice == "r":
+        random_song = random.choice(get_song_names())
+        print(f"We randomly selected {random_song} for you.")
+        song_file = get_song_name_to_file_name()[random_song]
+
+    return song_file
 
 
 def start_sequential_memorization_session(
         chord_selection=None
 ):
     if chord_selection is None:
-        chord_selection = [True, False, True, False]  # root, third, fifth and seventh
+        chord_selection = [True, True, True, True]  # root, third, fifth and seventh
         # make training where you go through all of the possibilities
 
     print("Welcome to the sequential memorizer!")
-    print("Would you like to pick a song or let me choose a random one? (p)ick/(r)andom")
 
-    song = get_anchor_interval_representation_of_song("text_standards/THERE_WILL_NEVER_BE_ANOTHER_YOU.chords")
+    song = get_anchor_interval_representation_of_song("text_standards/" + select_song())
     flattened_song = [chord for row in song for chord in row]
 
     index = 0
     errors = 0
     consecutive_errors = 0
     done = False
+    first_chord = True
 
     while not done:
         bar = flattened_song[index]
         ground_truth = get_ground_truth(bar, chord_selection)
 
-        raw_input = input("What is the next chord?: ")
+        raw_input = input(f"What is the {'first' if first_chord else 'next'} chord?: ")
 
         if raw_input.strip() == "h":
             print(get_roots_help_message(ground_truth))
@@ -128,6 +226,7 @@ def start_sequential_memorization_session(
                 print("success")
                 index += 1
                 consecutive_errors = 0
+                first_chord = False
             else:
                 print("incorrect")
                 errors += 1
@@ -136,6 +235,8 @@ def start_sequential_memorization_session(
         if index == len(flattened_song):
             print("well done you've completed the song")
             return
+
+    first_iteration = False
 
 
 def get_ground_truth(bar, chord_selection):
@@ -158,9 +259,8 @@ def get_ground_truth(bar, chord_selection):
 
 
 def learn_new_song_session():
-    print("Hi, let's learn a new song!")
 
-    song = get_anchor_interval_representation_of_song("text_standards/THERE_WILL_NEVER_BE_ANOTHER_YOU.chords")
+    song = get_anchor_interval_representation_of_song("text_standards/" + select_song())
 
     line_index = 0
 
@@ -168,13 +268,21 @@ def learn_new_song_session():
 
         memorized_line = False
         line = song[line_index]
-        print("let's memorize this line: " + str(line))
+
+        user_requested_skip = False
+
+        user_experience.show_text_with_pause_after("let's memorize this line: " + str(line))
 
         while not memorized_line:
 
-            LINE_ITERATIONS_FOR_MEMORIZATION = 1
+            LINE_ITERATIONS_FOR_MEMORIZATION = 4
 
-            print(f"Once you get it right {LINE_ITERATIONS_FOR_MEMORIZATION} times in a row, we can move to the next line.")
+            user_experience.show_text_with_pause_after( f"Once you get it right {LINE_ITERATIONS_FOR_MEMORIZATION} times in a row, we can move to the next line.", 3)
+
+            user_experience.show_text_with_pause_after(f"Don't, forget if you can't remember the chord, type 'h' to "
+                                                       f"get help.", 2)
+            user_experience.show_text_with_pause_after(f"If you're confident you already know this line, type 's' to "
+                                                       f"skip it", 2)
 
             bar_index = 0
             errors_made_in_line = 0
@@ -186,18 +294,30 @@ def learn_new_song_session():
 
                     bar = line[bar_index]
                     ground_truth = get_ground_truth(bar, [True, True, True, True])
-                    raw_input = input("What is the next chord?: ")
+                    raw_input = input(f"What is the {'first' if bar_index == 0 else 'next'} chord?: ")
 
-                    chords_guess_raw = raw_input
-
-                    got_it_right = verify_guess(chords_guess_raw, ground_truth)
-
-                    if got_it_right:
-                        print("success")
-                        bar_index += 1
+                    if raw_input.strip() == "h":
+                        print(get_roots_help_message(ground_truth))
+                    elif raw_input.strip() == "s":
+                        user_experience.show_text_with_pause_after_and_then_clear_screen(
+                            "Looks like you already know this line, let's continue."
+                        )
+                        user_requested_skip = True
+                        line_index += 1
+                        break
                     else:
-                        errors_made_in_line += 1
-                        print("incorrect")
+                        chords_guess_raw = raw_input
+                        got_it_right = verify_guess(chords_guess_raw, ground_truth)
+
+                        if got_it_right:
+                            print("success")
+                            bar_index += 1
+                        else:
+                            errors_made_in_line += 1
+                            print("incorrect")
+
+                if user_requested_skip:
+                    break
 
                 assert (bar_index == len(line))
                 if errors_made_in_line > 0:
@@ -206,65 +326,84 @@ def learn_new_song_session():
                 else:
                     assert (errors_made_in_line == 0)
                     consecutive_time_correct += 1
-                    print(
-                        f"Well done, you got that line completely correct, do that {4 - consecutive_time_correct} more times.")
+                    user_experience.show_text_with_pause_after_and_then_clear_screen(
+                        f"Well done, you got that line completely correct, do that {LINE_ITERATIONS_FOR_MEMORIZATION - consecutive_time_correct} more times.",
+                        3
+                    )
+
+
+                if user_requested_skip:
+                    break
 
                 bar_index = 0
                 errors_made_in_line = 0
 
+            if user_requested_skip:
+                break
+
             assert (consecutive_time_correct == LINE_ITERATIONS_FOR_MEMORIZATION)
-            print("Nice, you've got that line, let's try a new line.")
+            user_experience.show_text_with_pause_after("Nice, you've grasped that line well.")
             memorized_line = True
+            just_memorized_first_line = line_index == 0
+
             line_index += 1
 
-            print("Before we continue, let's run through the lines we know, starting from the first: ")
+            if not just_memorized_first_line:
 
-            recap_song = song[:line_index]
+                print("Before we continue, let's run through the lines we know, starting from the first: ")
 
-            line_to_num_errors = {}
+                recap_song = song[:line_index]
 
-            line_recap_index: int = 0
-            while line_recap_index < len(recap_song):
-                recap_line = recap_song[line_recap_index]
-                #bar recap_
-                for recap_bar in recap_line:
-                    ground_truth = get_ground_truth(recap_bar, [True, True, True, True])
+                line_to_num_errors = {}
 
-                    raw_input = input("What is the next chord?: ")
+                line_recap_index: int = 0
+                while line_recap_index < len(recap_song):
+                    recap_line = recap_song[line_recap_index]
+                    recap_bar_index = 0
+                    while recap_bar_index < len(recap_line):
+                        recap_bar = recap_line[recap_bar_index]
 
-                    chords_guess_raw = raw_input
+                        ground_truth = get_ground_truth(recap_bar, [True, True, True, True])
 
-                    got_it_right = verify_guess(chords_guess_raw, ground_truth)
+                        raw_input = input("What is the next chord?: ")
 
-                    if got_it_right:
-                        print("success")
-                        line_recap_index += 1
-                    else:
-                        print("incorrect")
-                        if line_recap_index not in line_to_num_errors:
-                            line_to_num_errors[line_recap_index] = 0
-                        line_to_num_errors[line_recap_index] += 1
+                        chords_guess_raw = raw_input
 
-            made_any_errors = False
-            feedback = ""
+                        got_it_right = verify_guess(chords_guess_raw, ground_truth)
 
+                        if got_it_right:
+                            print("success")
+                            recap_bar_index += 1
+                        else:
+                            print("incorrect, try again")
+                            if line_recap_index not in line_to_num_errors:
+                                line_to_num_errors[line_recap_index] = 0
+                            line_to_num_errors[line_recap_index] += 1
 
-            for line, num_errors in line_to_num_errors.items():
-                if num_errors > 0:
-                    made_any_errors = True
-                    feedback += f"you made {num_errors} on line {line} \n"
+                    line_recap_index += 1
 
+                made_any_errors = False
+                feedback = ""
 
-            if made_any_errors:
-                earliest_mistake_line = min(line_to_num_errors.keys())
-                print(feedback)
-                answer = input(f"Your earliest mistake was on line {earliest_mistake_line}, would you like to recommence memorization from that line?")
-                # TODO regex yes no on answer
-                if answer == "yes":
-                    line_index = earliest_mistake_line
-                    print("Ok, we'll start from that line now.")
-            else:
-                print("Well done, you know everything up to including this line we just practiced!")
+                for line, num_errors in line_to_num_errors.items():
+                    if num_errors > 0:
+                        made_any_errors = True
+                        feedback += f"you made {num_errors} errors on line {line + 1} \n"
+
+                if made_any_errors:
+                    earliest_mistake_line = min(line_to_num_errors.keys())
+                    print(feedback)
+                    answer = input(
+                        f"Your earliest mistake was on line {earliest_mistake_line + 1}, would you like to recommence memorization from that line?")
+                    # TODO regex yes no on answer
+                    if answer == "yes":
+                        line_index = earliest_mistake_line
+                        print("Ok, we'll start from that line now.")
+                else:
+                    user_experience.clear_screen_and_show_text("Well done, you know everything up to including this line we just practiced!")
+
+            if user_requested_skip:
+                continue
 
 
             # make a function which goes from lines 0 to n and do that.
@@ -274,7 +413,15 @@ def learn_new_song_session():
 
 
 
+def query_user_for_practice_session_mode():
+    user_experience.clear_screen()
+    print("Hey there, let's memorize some songs.")
+    answer = input("Do you want to (p)ractice a song you already know or (l)earn a new one?: ")
+    if answer.strip() == "p":
+        start_sequential_memorization_session()
+    elif answer.strip() == "l":
+        learn_new_song_session()
+
 
 if __name__ == "__main__":
-    start_sequential_memorization_session()
-    #learn_new_song_session()
+    query_user_for_practice_session_mode()
