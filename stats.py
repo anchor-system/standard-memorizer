@@ -6,8 +6,6 @@ def get_stats_from_file():
         loaded_dict = pickle.load(f)
         return loaded_dict
 
-
-
 def save_stats_to_file(dictionary):
     with open('stats/user.pkl', 'wb') as f:
         pickle.dump(dictionary, f)
