@@ -3,6 +3,7 @@ from pprint import pprint
 from typing import List
 import random
 
+import stats
 from input import get_roots_help_message, verify_guess
 from user_experience import pause_then_clear_screen, clear_screen, temporarily_show_text
 import user_experience
@@ -200,7 +201,9 @@ def start_sequential_memorization_session(
 
     print("Welcome to the sequential memorizer!")
 
-    song = get_anchor_interval_representation_of_song("text_standards/" + select_song())
+    song_file = select_song()
+
+    song = get_anchor_interval_representation_of_song("text_standards/" + song_file)
     flattened_song = [chord for row in song for chord in row]
 
     index = 0
@@ -234,6 +237,16 @@ def start_sequential_memorization_session(
 
         if index == len(flattened_song):
             print("well done you've completed the song")
+            if errors == 0:
+                user_stats = stats.get_stats_from_file()
+                song_file_no_extension = song_file[:-7]
+                if song_file_no_extension not in user_stats:
+                    user_stats[song_file_no_extension] = 0
+
+                user_stats[song_file_no_extension] += 1
+
+                stats.save_stats_to_file(user_stats)
+
             return
 
     first_iteration = False
