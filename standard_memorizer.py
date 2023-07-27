@@ -288,7 +288,6 @@ def learn_new_song_session():
 
         while not memorized_line:
 
-            LINE_ITERATIONS_FOR_MEMORIZATION = 4
 
             user_experience.show_text_with_pause_after( f"Once you get it right {LINE_ITERATIONS_FOR_MEMORIZATION} times in a row, we can move to the next line.", 3)
 
@@ -433,6 +432,14 @@ def query_user_for_practice_session_mode():
     if answer.strip() == "p":
         start_sequential_memorization_session()
     elif answer.strip() == "l":
+        memorization_level = input("Do you want to do (l)ight, (m)oderate or (h)eavy memorization?: ")
+        global LINE_ITERATIONS_FOR_MEMORIZATION
+        if memorization_level.strip() == "l":
+            LINE_ITERATIONS_FOR_MEMORIZATION = 2
+        elif memorization_level.strip() == "m":
+            LINE_ITERATIONS_FOR_MEMORIZATION = 3
+        elif memorization_level.strip() == "h":
+            LINE_ITERATIONS_FOR_MEMORIZATION = 4
         learn_new_song_session()
 
 
