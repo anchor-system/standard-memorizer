@@ -1,6 +1,6 @@
 # standard memorizer
 
-This tool allows you to practice jazz standards with the goal of memorization.
+This tool allows you to practice jazz standards with the goal of memorization, all memorization is done in the anchor system.
 
 ## usage
 
